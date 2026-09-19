@@ -1,0 +1,435 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// USUÁRIOS E PERMISSÕES
+// ============================================================
+
+model User {
+  id            String    @id @default(uuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          String    @default("OPERATOR") // OPERATOR, TECHNICIAN, ADMIN
+  avatar        String?
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relações
+  assignedTickets    Ticket[]    @relation("AssignedTechnician")
+  createdTickets     Ticket[]    @relation("TicketCreator")
+  auditLogs          AuditLog[]
+  notifications      Notification[]
+  checklistItems     ChecklistItem[]
+  replacements       Replacement[]
+  stockMovements     StockMovement[]
+  historyItems       HistoryItem[]
+
+  @@index([role])
+  @@index([active])
+}
+
+// ============================================================
+// SETORES
+// ============================================================
+
+model Sector {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  code        String?   @unique
+  description String?
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  machines    Machine[]
+  tickets     Ticket[]
+
+  @@index([active])
+}
+
+// ============================================================
+// MÁQUINAS
+// ============================================================
+
+model Machine {
+  id              String    @id @default(uuid())
+  name            String
+  code            String?   @unique
+  patrimonyNumber String?   @unique
+  sectorId        String
+  manufacturer    String?
+  model           String?
+  serialNumber    String?
+  year            Int?
+  location        String?
+  status          String    @default("OPERATING") // OPERATING, MAINTENANCE, STOPPED, DEACTIVATED
+  photo           String?
+  manual          String?
+  observations    String?
+  installationDate DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sector          Sector    @relation(fields: [sectorId], references: [id])
+  tickets         Ticket[]
+  components      Component[]
+  errorCodes      ErrorCode[]
+  preventiveMaintenances PreventiveMaintenance[]
+  historyItems    HistoryItem[]
+
+  @@index([sectorId])
+  @@index([status])
+}
+
+// ============================================================
+// CHAMADOS
+// ============================================================
+
+model Ticket {
+  id              String    @id @default(uuid())
+  number          Int       @unique
+  machineId       String
+  sectorId        String
+  creatorId       String
+  assignedToId    String?
+  problemType     String    // MACHINE_STOPPED, ELECTRICAL, MECHANICAL, HYDRAULIC, PNEUMATIC, SENSOR, NOISE, LEAK, PANEL_ERROR, SAFETY, OTHER
+  description     String
+  errorCode       String?
+  priority        String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  status          String    @default("NEW") // NEW, IN_ANALYSIS, IN_PROGRESS, AWAITING_PART, AWAITING_PRODUCTION, RESOLVED, CANCELLED
+  photo           String?
+  video           String?
+  diagnosis       String?
+  cause           String?
+  solution        String?
+  maintenanceTime Int?      // em minutos
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  machine         Machine   @relation(fields: [machineId], references: [id])
+  sector          Sector    @relation(fields: [sectorId], references: [id])
+  creator         User      @relation("TicketCreator", fields: [creatorId], references: [id])
+  assignedTo      User?     @relation("AssignedTechnician", fields: [assignedToId], references: [id])
+  ticketParts     TicketPart[]
+  historyItems    HistoryItem[]
+  notifications   Notification[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([machineId])
+  @@index([sectorId])
+  @@index([assignedToId])
+  @@index([creatorId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// PEÇAS UTILIZADAS NO CHAMADO
+// ============================================================
+
+model TicketPart {
+  id        String    @id @default(uuid())
+  ticketId  String
+  partId    String
+  quantity  Int       @default(1)
+  createdAt DateTime  @default(now())
+
+  ticket    Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  part      Part      @relation(fields: [partId], references: [id])
+
+  @@unique([ticketId, partId])
+}
+
+// ============================================================
+// CÓDIGOS DE ERRO
+// ============================================================
+
+model ErrorCode {
+  id              String    @id @default(uuid())
+  code            String
+  machineId       String?
+  name            String
+  description     String
+  probableCause   String?
+  diagnosticProcedure String?
+  solution        String?
+  riskLevel       String    @default("MEDIUM") // LOW, MEDIUM, HIGH, CRITICAL
+  requiredEquipment String?
+  requiredTools   String?
+  photo           String?
+  video           String?
+  observations    String?
+  safetyInfo      String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  machine         Machine?  @relation(fields: [machineId], references: [id])
+
+  @@unique([code])
+  @@index([code])
+  @@index([machineId])
+}
+
+// ============================================================
+// COMPONENTES
+// ============================================================
+
+model Component {
+  id              String    @id @default(uuid())
+  machineId       String
+  name            String
+  code            String?
+  manufacturer    String?
+  model           String?
+  serialNumber    String?
+  installationDate DateTime
+  lastReplacement DateTime?
+  usefulLifeMonths Int?
+  usefulLifeHours  Int?
+  quantity        Int       @default(1)
+  location        String?
+  supplier        String?
+  stockAvailable  Int?
+  observations    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  machine         Machine   @relation(fields: [machineId], references: [id])
+  replacements    Replacement[]
+
+  @@index([machineId])
+  @@index([installationDate])
+}
+
+// ============================================================
+// SUBSTITUIÇÕES DE COMPONENTES
+// ============================================================
+
+model Replacement {
+  id            String    @id @default(uuid())
+  componentId   String
+  technicianId  String?
+  date          DateTime  @default(now())
+  reason        String?
+  observations  String?
+  createdAt     DateTime  @default(now())
+
+  component     Component @relation(fields: [componentId], references: [id])
+  technician    User?     @relation(fields: [technicianId], references: [id])
+
+  @@index([componentId])
+  @@index([date])
+}
+
+// ============================================================
+// PEÇAS / ESTOQUE
+// ============================================================
+
+model Part {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  name            String
+  category        String?
+  manufacturer    String?
+  model           String?
+  currentStock    Int       @default(0)
+  minimumStock    Int       @default(0)
+  location        String?
+  supplier        String?
+  price           Float?
+  observations    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  ticketParts     TicketPart[]
+  stockMovements  StockMovement[]
+
+  @@index([code])
+  @@index([category])
+}
+
+// ============================================================
+// MOVIMENTAÇÕES DE ESTOQUE
+// ============================================================
+
+model StockMovement {
+  id          String    @id @default(uuid())
+  partId      String
+  type        String    // IN, OUT, ADJUSTMENT
+  quantity    Int
+  reason      String?
+  ticketId    String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+
+  part        Part      @relation(fields: [partId], references: [id])
+  creator     User?     @relation(fields: [createdBy], references: [id])
+
+  @@index([partId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================================
+// MANUTENÇÃO PREVENTIVA
+// ============================================================
+
+model PreventiveMaintenance {
+  id              String    @id @default(uuid())
+  machineId       String
+  title           String
+  description     String?
+  periodicityMonths Int?
+  lastExecution   DateTime?
+  nextExecution   DateTime?
+  responsible     String?
+  status          String    @default("OK") // OK, UPCOMING, OVERDUE
+  observations    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  machine         Machine   @relation(fields: [machineId], references: [id])
+  checklists      Checklist[]
+
+  @@index([machineId])
+  @@index([nextExecution])
+  @@index([status])
+}
+
+// ============================================================
+// CHECKLISTS
+// ============================================================
+
+model Checklist {
+  id                    String    @id @default(uuid())
+  preventiveMaintenanceId String
+  title                 String
+  executedAt            DateTime?
+  executedBy            String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  preventiveMaintenance PreventiveMaintenance @relation(fields: [preventiveMaintenanceId], references: [id])
+  items                 ChecklistItem[]
+
+  @@index([preventiveMaintenanceId])
+}
+
+// ============================================================
+// ITENS DO CHECKLIST
+// ============================================================
+
+model ChecklistItem {
+  id          String    @id @default(uuid())
+  checklistId String
+  description String
+  status      String    @default("PENDING") // PENDING, OK, NOT_OK, NA
+  observation String?
+  photo       String?
+  createdAt   DateTime  @default(now())
+
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [createdBy], references: [id])
+  createdBy   String?
+
+  @@index([checklistId])
+  @@index([status])
+}
+
+// ============================================================
+// HISTÓRICO
+// ============================================================
+
+model HistoryItem {
+  id          String    @id @default(uuid())
+  machineId   String
+  ticketId    String?
+  type        String    // TICKET, MAINTENANCE, REPLACEMENT, OTHER
+  title       String
+  description String?
+  date        DateTime  @default(now())
+  userId      String?
+  createdAt   DateTime  @default(now())
+
+  machine     Machine   @relation(fields: [machineId], references: [id])
+  ticket      Ticket?   @relation(fields: [ticketId], references: [id])
+  user        User?     @relation(fields: [userId], references: [id])
+
+  @@index([machineId])
+  @@index([date])
+  @@index([type])
+}
+
+// ============================================================
+// NOTIFICAÇÕES
+// ============================================================
+
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  ticketId    String?
+  type        String    // NEW_TICKET, TICKET_ASSIGNED, TICKET_STATUS_CHANGE, COMPONENT_ALERT, PREVENTIVE_ALERT, STOCK_LOW
+  title       String
+  message     String
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id])
+  ticket      Ticket?   @relation(fields: [ticketId], references: [id])
+
+  @@index([userId])
+  @@index([read])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================================
+// AUDITORIA
+// ============================================================
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String
+  action      String    // CREATE, UPDATE, DELETE, STATUS_CHANGE, LOGIN, LOGOUT
+  entity      String    // TICKET, MACHINE, COMPONENT, PART, USER, etc.
+  entityId    String?
+  details     String?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================================
+// ARQUIVOS
+// ============================================================
+
+model File {
+  id          String    @id @default(uuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  path        String
+  entityType  String?   // TICKET, MACHINE, ERROR_CODE, COMPONENT, MAINTENANCE
+  entityId    String?
+  uploadedBy  String?
+  createdAt   DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([uploadedBy])
+}
