@@ -1,0 +1,5 @@
+-- PostgreSQL schema for production (Vercel + Supabase)
+-- This file is used by Prisma in production
+
+-- For local development, use SQLite (schema.prisma with provider = "sqlite")
+-- For production, use PostgreSQL (this schema with provider = "postgresql")
